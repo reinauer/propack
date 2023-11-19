@@ -1541,7 +1541,10 @@ int do_search(vars_t *v, size_t input_size, int save)
                     break;
                 }
 
-                fwrite(v->output, v->output_offset, 1, out);
+                if (fwrite(v->output, v->output_offset, 1, out) != 1) {
+                    error_code = 12;
+                    perror("Write failed");
+                }
                 fclose(out);
             }
         }
@@ -1711,6 +1714,7 @@ int main(int argc, char *argv[])
         printf("No memory.\n");
         return -1;
     }
+    bzero(v->output, MAX_BUF_SIZE);
 
     v->temp = (uint8*)malloc(MAX_BUF_SIZE);
     if (!v->temp) {
