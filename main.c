@@ -178,10 +178,15 @@ uint32 peek_dword_be(uint8 *buf, size_t offset)
     return (w1 << 16) | w2;
 }
 
-uint32 read_dword_be(uint8 *buf, size_t *offset)
+uint32 read_dword_be(vars_t *v)
 {
-    uint16 w1 = read_word_be(buf, offset);
-    uint16 w2 = read_word_be(buf, offset);
+    if (v->input_offset + 3 > v->file_size) {
+	printf("Corrupt file.\n");
+	exit(1);
+    }
+
+    uint16 w1 = read_word_be(v->input, &v->input_offset);
+    uint16 w2 = read_word_be(v->input, &v->input_offset);
 
     return (w1 << 16) | w2;
 }
@@ -1424,13 +1429,13 @@ int do_unpack_data(vars_t *v)
 {
     int start_pos = v->input_offset;
 
-    uint32 sign = read_dword_be(v->input, &v->input_offset);
+    uint32 sign = read_dword_be(v);
     if ((sign >> 8) != RNC_SIGN)
         return 6;
 
     v->method = sign & 3;
-    v->input_size = read_dword_be(v->input, &v->input_offset);
-    v->packed_size = read_dword_be(v->input, &v->input_offset);
+    v->input_size = read_dword_be(v);
+    v->packed_size = read_dword_be(v);
     if (v->file_size < v->packed_size)
         return 7;
     v->unpacked_crc = read_word_be(v->input, &v->input_offset);
