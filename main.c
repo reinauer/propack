@@ -979,8 +979,10 @@ void compress_data_1(vars_t *v)
 
         write_bits_m1(v, v->v17, 16);
 
-        while (v->v17--)
+        while (v->v17 > 0) // Check if there are iterations left
         {
+            v->v17--; // Decrement *before* the check at the end of the loop body
+
             uint32 data_length = read_word_be(v->temp, &v->temp_offset);
             v->v7 += data_length;
 
