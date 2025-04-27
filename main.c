@@ -1446,6 +1446,43 @@ int do_unpack_data(vars_t *v)
     /*v->leeway = */read_byte(v->input, &v->input_offset);
     /*v->chunks_count = */read_byte(v->input, &v->input_offset);
 
+    // ---- START VALIDATION ----
+    // Check if the declared unpacked size is reasonable (e.g., against MAX_BUF_SIZE or another limit)
+    // v->output is allocated with MAX_BUF_SIZE in main, v->decoded with 0xFFFF in do_unpack_data
+    // The final output buffer in main is v->output (MAX_BUF_SIZE)
+    if (v->input_size > MAX_BUF_SIZE) { 
+        // Or use a smaller, more specific limit if decoded data goes into a smaller intermediate buffer first.
+        // For example, v->decoded is 0xFFFF. If data is directly unpacked there, 
+        // v->input_size should not greatly exceed this per chunk, or overall if not chunked writing.
+        // Given write_decoded_byte writes to v->output (size MAX_BUF_SIZE) in chunks from v->decoded,
+        // the total v->input_size should be compared against v->output's capacity.
+        printf("Error: Declared unpacked size in header (%u) is too large.\n", v->input_size);
+        return 8; // Define a new error code for invalid header values
+    }
+
+    // Check if declared packed_size is consistent with the actual data available for this RNC block.
+    // v->file_size in the context of do_unpack_data is the size of the current RNC block being processed.
+    // The data for this block starts after the RNC_HEADER_SIZE.
+    if (v->packed_size > v->file_size) { 
+      // Note: v->file_size in do_unpack_data is the total size from current v->input_offset for this RNC.
+      // The actual file data for the packed stream is v->file_size - (v->input_offset - initial_offset_of_this_rnc_data_stream)
+      // More simply, the packed_size read from header should not exceed the amount of data read from file for it.
+      // This check is tricky here because v->file_size might be the *original* total file size if called from main directly.
+      // The crc_block call uses v->packed_size: crc_block(v->input, v->input_offset, v->packed_size)
+      // This means there must be at least v->packed_size bytes available from v->input_offset.
+      // If v->packed_size is huge, crc_block will read out of bounds.
+      // A check before crc_block is needed:
+      // if (v->input_offset + v->packed_size > v->file_size_boundary_for_this_chunk) return ERROR;
+      // This is harder to express without knowing the boundary.
+      // However, a simple check against a max reasonable value can be done:
+      if (v->packed_size > MAX_BUF_SIZE) { // Or some other large constant
+          printf("Error: Declared packed size in header (%u) is too large.\n", v->packed_size);
+          return 8; 
+      }
+    }
+    // ---- END VALIDATION ----
+
+
     if (crc_block(v->input, v->input_offset, v->packed_size) != v->packed_crc)
         return 4;
 
@@ -1699,7 +1736,30 @@ int main(int argc, char *argv[])
         printf("Cannot fseek()\n");
         return -1;
     }
-    v->file_size = ftell(in) - v->read_start_offset;
+//    v->file_size = ftell(in) - v->read_start_offset;
+
+    long actual_file_length_from_ftell = ftell(in);
+    // This was implicitly done by the previous line.
+    // Let's assume ftell was successful and returned a non-negative value.
+    // Proper error checking for ftell itself should exist.
+    // Ensure read_start_offset is not beyond the actual file length
+    if (v->read_start_offset >= (size_t)actual_file_length_from_ftell) {
+        v->file_size = 0; // No data to read if offset is at or past EOF
+    } else {
+        // Calculate effective size, ensuring it doesn't exceed uint32 capabilities
+        unsigned long long effective_size_ull = (unsigned long long)actual_file_length_from_ftell - v->read_start_offset;
+        if (effective_size_ull > 0xFFFFFFFFUL) { // Check against UINT32_MAX
+            printf("Error: Calculated file size to process is too large.\n");
+            fclose(in); free(v); return 1;
+        }
+        v->file_size = (uint32)effective_size_ull;
+    }
+    // Check against an operational limit like MAX_BUF_SIZE
+    if (v->file_size > MAX_BUF_SIZE) {
+        printf("Error: File size %u exceeds processable limit %u.\n", v->file_size, MAX_BUF_SIZE);
+        fclose(in); free(v); return 1;
+    }
+
     if (fseek(in, v->read_start_offset, SEEK_SET)) {
         free(v);
         printf("Cannot fseek()\n");
