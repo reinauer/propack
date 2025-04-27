@@ -1511,22 +1511,31 @@ int do_search(vars_t *v, size_t input_size, int save)
     int error_code = 11;
     int has_rncs = 0;
 
-    for (uint32 i = 0; i < input_size - RNC_HEADER_SIZE; )
+    uint32 current_offset = 0;
+    while (current_offset + RNC_HEADER_SIZE <= input_size)
     {
-        v->read_start_offset = i;
-        v->file_size = input_size - i;
-        v->input_offset = 0;
+        v->read_start_offset = current_offset;
+        v->file_size = input_size - current_offset; // Remaining data size for do_unpack
+        v->input_offset = 0; // Relative offset for do_unpack
         v->output_offset = 0;
 
-        uint8 *input_ptr = v->input;
-        v->input = &v->input[i];
+        uint8 *input_ptr_backup = v->input; // Backup the original base pointer from main
+        v->input = &input_ptr_backup[current_offset];
 
-        if (!(error_code = do_unpack(v)))
+        error_code = do_unpack(v); // do_unpack now operates on v->input starting at current_offset
+        v->input = input_ptr_backup; // Restore the original base pointer
+
+        if (!error_code)
         {
-            printf("RNC archive found: 0x%.6x (%.6d/%.6zu bytes)\n", i, v->packed_size + RNC_HEADER_SIZE, v->output_offset);
-            i += v->packed_size + RNC_HEADER_SIZE;
-            error_code = 0;
-            has_rncs = 1;
+            printf("RNC archive found: 0x%.6x (%.6d/%.6zu bytes)\n", current_offset, v->packed_size + RNC_HEADER_SIZE, v->output_offset);
+            uint32 advance = v->packed_size + RNC_HEADER_SIZE;
+            // Basic check to ensure forward progress and prevent issues with corrupt packed_size
+            if (advance == 0 || (current_offset + advance < current_offset) || (v->packed_size > input_size) ) { 
+                current_offset++; // Minimal progress if advance amount is problematic
+            } else {
+                current_offset += advance;
+            }
+            has_rncs = 1; // Mark that at least one RNC archive was found
 
             if (save) {
                 FILE* out;
@@ -1559,16 +1568,14 @@ int do_search(vars_t *v, size_t input_size, int save)
         {
             switch (error_code)
             {
-            case 4: printf("Position 0x%.6X: Packed CRC is wrong!\n", i); break;
-            case 5: printf("Position 0x%.6X: Unpacked CRC is wrong!\n", i); break;
-            case 9: printf("Position 0x%.6X: File already packed!\n", i); break;
-            case 10: printf("Position 0x%.6X: Decryption key required!\n", i); break;
+            case 4: printf("Position 0x%.6X: Packed CRC is wrong!\n", current_offset); break;
+            case 5: printf("Position 0x%.6X: Unpacked CRC is wrong!\n", current_offset); break;
+            case 9: printf("Position 0x%.6X: File already packed!\n", current_offset); break;
+            case 10: printf("Position 0x%.6X: Decryption key required!\n", current_offset); break;
             }
 
-            i++;
+            current_offset++;
         }
-
-        v->input = input_ptr;
     }
 
     return has_rncs ? 0 : ((error_code == 6) ? 11 : error_code);
