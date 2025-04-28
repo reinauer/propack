@@ -780,7 +780,7 @@ uint32 inverse_bits(uint32 value, int count)
 
 void proc_20(huftable_t *data, int count)
 {
-    int val = 0;
+    uint32 val = 0;
     uint32 div = 0x80000000;
     int bits_count = 1;
 
