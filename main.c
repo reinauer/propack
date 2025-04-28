@@ -925,8 +925,10 @@ void compress_data_2(vars_t *v)
                 v->match_count += 2;
                 v->v7 += v->match_count;
 
-                while (v->match_count--)
+                while (v->match_count > 0) {
                     read_from_input(v);
+                    v->match_count--;
+                }
             }
         }
 
