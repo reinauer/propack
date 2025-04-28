@@ -1405,8 +1405,10 @@ int unpack_data_m1(vars_t *v)
 
             if (data_length)
             {
-                while (data_length--)
+                while (data_length > 0) {
                     write_decoded_byte(v, (v->enc_key ^ read_source_byte(v)) & 0xFF);
+                    data_length--;
+                }
 
                 ror_w(&v->enc_key);
 
@@ -1419,8 +1421,10 @@ int unpack_data_m1(vars_t *v)
                 v->match_count = decode_table_data(v, v->pos_table) + 2;
                 v->processed_size += v->match_count;
 
-                while (v->match_count--)
+                while (v->match_count > 0) {
                     write_decoded_byte(v, v->window[-v->match_offset]);
+                    v->match_count--;
+                }
             }
         }
     }
